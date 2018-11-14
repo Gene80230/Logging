@@ -97,6 +97,9 @@
                     if(errors.email && errors.email === 'invalid'){
                         $form.find('[name="email"]').siblings('.error').text('邮箱填写错误')
                     }
+                    if(errors.email && errors.email === 'inUse'){
+                        $form.find('[name="email"]').siblings('.error').text('用户已存在')
+                    }
                 })
         })
     </script>

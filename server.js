@@ -23,6 +23,29 @@ var server = http.createServer(function(request, response){
 
   if(path === '/'){
     let string = fs.readFileSync('./index.html','utf8')
+    let cookies = request.headers.cookie.split('; ')    //['email=1@G...,a=1']
+    let hash = {}
+    for(let i=0; i<cookies.length; i++){
+      let parts = cookies[i].split('=')
+      let key = parts[0]
+      let value = parts[1]
+      hash[key] = value
+    }
+    let email = hash.sign_in_email
+    let users = fs.readFileSync('./db/users','utf8')
+    users = JSON.parse(users)
+    let foundUse
+    for(let i=0; i<users.length; i++){
+      if(users[i].email === email){
+        foundUse = users[i]
+        break;
+      }
+    }
+    if(foundUse){
+      string = string.replace('__email__',`登陆成功，${foundUse.email}`)
+    }else{
+      string = string.replace('__email__','你好，你还没有登陆')
+    }
     response.statusCode = 200
     response.setHeader('Content-Type', 'text/html;charset=utf-8')
     response.write(string)
@@ -41,7 +64,7 @@ var server = http.createServer(function(request, response){
           let parts = string.split('=')
           let key = parts[0]
           let value = parts[1]
-          hash[key] = decodeURIComponent(value)
+          hash[key] = decodeURIComponent(value)    //把%40翻译成@
         })
         let {email,password,password_confirmation} = hash
         if(email.indexOf('@') === -1){
@@ -56,8 +79,35 @@ var server = http.createServer(function(request, response){
           response.statusCode = 400
           response.write('password not match')
         }else{
-            response.statusCode = 200
+          var users = fs.readFileSync('./db/users', 'utf8')
+          try{
+            users = JSON.parse(users)           //如果不符合JSON语法就执行下面那句
+          }catch(exception){
+            users = []                          //重置数据库
+          }  
+          let inUse = false
+          for(let i=0; i<users.length; i++){
+            let user = users[i]
+            if(user.email === email ){          //如果用户存在则返回inUse
+              inUse = true
+              break;
+            }
           }
+          if(inUse){
+            response.statusCode = 400
+            response.setHeader('Content-Type', 'application/json;charset=utf-8')
+            response.write(`{
+              "errors":{
+                "email": "inUse"
+              }
+            }`)
+          }else{
+            users.push({email: email, password: password})        //放进数据库
+            var usersString = JSON.stringify(users)             //把对象转化为字符串
+            fs.writeFileSync('./db/users', usersString)         //保存进...
+            response.statusCode = 200 
+          }                        
+        }
         response.end()
       })
   }else if(path === '/sign_in' && method === 'GET'){
@@ -66,6 +116,41 @@ var server = http.createServer(function(request, response){
     response.setHeader('Content-Type', 'text/html;charset=utf-8')
     response.write(string)
     response.end()
+  }else if(path === '/sign_in' && method === 'POST'){
+    readBody(request).then((body)=>{
+      let hash = {}
+      let strings = body.split('&')
+      strings.forEach((string)=>{
+        let parts = string.split('=')
+        let key = parts[0]
+        let value = parts[1]
+        hash[key] = decodeURIComponent(value)    //把%40转换成@
+      })
+      let {email, password} = hash
+
+      var users = fs.readFileSync('./db/users','utf8')
+      try{
+        users = JSON.parse(users)           //如果不符合JSON语法就执行下面那句
+      }catch(exception){
+        users = []                          //重置数据库
+      }  
+      let found
+      for(let i=0; i<users.length; i++){
+        if(users[i].email === email && users[i].password === password){
+          found = true
+          break;
+        }
+      }
+      
+      if(found){
+        //Set-Cookie: <cookie-name>=<cookie-value>
+        response.setHeader('Set-Cookie', `sign_in_email=${email}`)
+        response.statusCode = 200
+      }else{
+        response.statusCode = 401
+      }
+      response.end()
+    }) 
   }else if(path === '/main.js'){
     let string = fs.readFileSync('./main.js','utf8')
     response.statusCode = 200
